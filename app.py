@@ -17,6 +17,15 @@ PLATFORM_META = {
     "youtube": {"label": "YouTube", "emoji": "▶️", "color": "#FF0000", "cook": "Crafting thumbnail-worthy hooks"},
 }
 
+PLATFORM_WORD_RANGE = {"linkedin": (150, 300), "facebook": (50, 150), "instagram": (0, 150)}
+
+QUICK_TOPICS = [
+    ("\U0001F916", "AI agents replacing busywork"),
+    ("\U0001F3E1", "Why remote-first teams win"),
+    ("\U0001F4C8", "Personal branding on a budget"),
+    ("\U0001F3AF", "Habits that actually stick"),
+]
+
 CUSTOM_CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@400;500;600&display=swap');
@@ -68,6 +77,35 @@ button[data-baseweb="tab"] { font-weight: 700 !important; font-size: 1.02rem !im
 }
 
 [data-testid="stSidebar"] { background: linear-gradient(180deg, rgba(124,58,237,0.06), rgba(236,72,153,0.03)); }
+
+textarea, [data-baseweb="input"] > div, [data-baseweb="select"] > div {
+    border-radius: 12px !important;
+}
+textarea:focus, [data-baseweb="input"]:focus-within, [data-baseweb="select"]:focus-within {
+    box-shadow: 0 0 0 3px rgba(124,58,237,0.25) !important;
+    border-color: #7C3AED !important;
+}
+
+[data-testid="stProgress"] > div > div > div {
+    background-image: linear-gradient(90deg, #7C3AED, #EC4899, #F59E0B) !important;
+}
+
+div[role="radiogroup"] label {
+    border: 1px solid rgba(124,58,237,0.25);
+    border-radius: 999px;
+    padding: 0.3rem 0.9rem;
+    margin: 0.15rem 0.3rem 0.15rem 0;
+    transition: background 0.15s ease;
+}
+div[role="radiogroup"] label:hover { background: rgba(124,58,237,0.08); }
+
+[data-testid="stVerticalBlockBorderWrapper"] {
+    border-radius: 14px !important;
+    transition: box-shadow 0.15s ease;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:hover { box-shadow: 0 8px 24px rgba(124,58,237,0.12); }
+
+.chip-hint { color: #9CA3AF; font-size: 0.85rem; margin-bottom: 0.2rem; }
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
@@ -213,10 +251,24 @@ def render_text_platform_tab(platform_key: str, prompt_fn):
             )
             edit_key = f"{platform_key}_edit_{variant['row_id']}"
 
+            current_html = st.session_state.get(edit_key, variant["text"])
+
             st.caption("\U0001F441️ Preview")
-            render_html_preview(
-                st.session_state.get(edit_key, variant["text"]), height=preview_height, accent_color=meta["color"]
+            render_html_preview(current_html, height=preview_height, accent_color=meta["color"])
+
+            plain_text = prompts.html_to_plain_text(current_html)
+            word_count = len(plain_text.split())
+            lo, hi = PLATFORM_WORD_RANGE.get(platform_key, (0, 10_000))
+            in_range = lo <= word_count <= hi
+            badge_color = "#16A34A" if in_range else "#D97706"
+            badge_text = "in the sweet spot" if in_range else f"target is {lo}-{hi}"
+            st.markdown(
+                f'<span style="color:{badge_color}; font-size:0.85rem; font-weight:600;">'
+                f'{word_count} words — {badge_text}</span>',
+                unsafe_allow_html=True,
             )
+            st.caption("\U0001F4CB Copy-paste ready (plain text)")
+            st.code(plain_text, language=None)
 
             st.caption("\U0001F58A️ HTML source (editable)")
             st.text_area("Edit before approving", value=variant["text"], key=edit_key, height=140, label_visibility="collapsed")
@@ -324,7 +376,10 @@ def render_history_tab():
             elif row["platform"] == "youtube":
                 st.text(row["edited_content"] or row["content"])
             else:
-                render_html_preview(row["edited_content"] or row["content"], height=220, accent_color=meta["color"])
+                content = row["edited_content"] or row["content"]
+                render_html_preview(content, height=220, accent_color=meta["color"])
+                st.caption("\U0001F4CB Copy-paste ready (plain text)")
+                st.code(prompts.html_to_plain_text(content), language=None)
 
 
 st.markdown(
@@ -360,11 +415,29 @@ with st.sidebar:
     llm.set_force_gemini_failure(force_failure)
     st.markdown("**\U0001F3DA️ Variants per platform**")
     num_variants = st.slider("Variants per platform", min_value=1, max_value=3, value=2, label_visibility="collapsed")
+    st.divider()
+    if st.button("\U0001F9F9 Start Fresh Session"):
+        for key, default in DEFAULTS.items():
+            st.session_state[key] = default
+        st.session_state["topic_input"] = ""
+        st.toast("Clean slate! Ready for a new topic.", icon="\U0001F9F9")
+        st.rerun()
+
+st.session_state.setdefault("topic_input", "")
+
+st.markdown('<div class="chip-hint">Need inspiration? Tap one \U0001F447</div>', unsafe_allow_html=True)
+chip_cols = st.columns(len(QUICK_TOPICS))
+for col, (emoji, chip_topic) in zip(chip_cols, QUICK_TOPICS):
+    if col.button(f"{emoji} {chip_topic}", key=f"chip_{chip_topic}"):
+        st.session_state["topic_input"] = chip_topic
+        st.rerun()
 
 mode_choice = st.radio("Input type", ["\U0001F4A1 Topic / keyword", "\U0001F4CB Paste content to repurpose"], horizontal=True)
 mode = "repurpose" if "Paste" in mode_choice else "topic"
 placeholder = "e.g. an existing blog post or article to repurpose..." if mode == "repurpose" else "e.g. why small teams should adopt AI code review"
-topic_input = st.text_area("Topic / content", placeholder=placeholder, height=120, label_visibility="collapsed")
+topic_input = st.text_area(
+    "Topic / content", placeholder=placeholder, height=120, label_visibility="collapsed", key="topic_input"
+)
 
 if st.button("✨ Generate My Content", type="primary"):
     if not topic_input or not topic_input.strip():

@@ -113,6 +113,26 @@ def parse_variants(raw_text: str) -> list:
     return parts if parts else [sanitize_html(raw_text)]
 
 
+def html_to_plain_text(html: str) -> str:
+    """Convert a generated HTML fragment into paste-ready plain text.
+
+    The rendered preview is HTML, but LinkedIn/Facebook/Instagram compose boxes
+    don't accept markup — this is what a user actually copies into them.
+    """
+    text = re.sub(r"(?i)<br\s*/?>", "\n", html)
+    text = re.sub(r"(?i)</p>", "\n\n", text)
+    text = re.sub(r"(?i)<li[^>]*>", "• ", text)
+    text = re.sub(r"(?i)</li>", "\n", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    entities = {
+        "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&nbsp;": " ",
+    }
+    for entity, replacement in entities.items():
+        text = text.replace(entity, replacement)
+    return text.strip()
+
+
 def parse_headlines(raw_text: str) -> list:
     """Split a HEADLINE-marked LLM response into a list of short plain-text headline strings."""
     raw_text = _strip_code_fences(raw_text)
